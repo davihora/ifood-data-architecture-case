@@ -1,3 +1,6 @@
+<img width="600" height="600" alt="image" src="https://github.com/user-attachments/assets/0414dcbd-ac2a-4553-8308-98c18e34bc26" />
+
+
 # iFood — Data Architecture Case (NYC Taxi Lakehouse)
 
 End-to-end, **fully local and reproducible** lakehouse that ingests NYC TLC yellow-taxi trip
