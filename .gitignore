@@ -27,3 +27,4 @@ metastore_db/
 
 # Editor / local tooling
 .vscode/
+.claude/
