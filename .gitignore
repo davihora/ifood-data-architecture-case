@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# Env / secrets
+.env
+
+# Data / Spark local artifacts
+data/
+*.parquet
+spark-warehouse/
+derby.log
+metastore_db/
+.ipynb_checkpoints/
+
+# Logs (build/run scratch output)
+*.log
+
+# OS
+.DS_Store
+
+# Editor / local tooling
+.vscode/

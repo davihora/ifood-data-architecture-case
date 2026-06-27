@@ -1,0 +1,212 @@
+# iFood Data Architecture Case — local lakehouse stack.
+# Always run via the Makefile (it sets --project-directory to the repo root so the
+# relative paths below resolve correctly): `make up`, `make demo`.
+#
+# Core (always on): minio, minio-init, spark (single-node local[*] runner).
+# Optional profiles (opt-in, keep the default light):
+#   cluster       → spark-master + spark-worker (real Spark standalone; proof of scale)
+#   consumption   → metastore-db + hive-metastore + trino (production-like SQL serving)
+#   orchestration → dagster (asset graph + lineage)
+#   test          → containerized pytest runner
+#
+# Default answer path = Spark (pipeline) writes Gold Delta; DuckDB reads it via SQL — no
+# cluster/Trino/Hive needed, so the core demo is light (~4 GB) and resilient.
+name: ifood-case
+
+services:
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio123}
+    ports: ["9000:9000", "9001:9001"]
+    volumes: ["minio-data:/data"]
+
+  # One-shot: wait for MinIO, then create the datalake bucket. Idempotent.
+  minio-init:
+    image: minio/mc:latest
+    depends_on: [minio]
+    restart: "no"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        until mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minio} ${MINIO_ROOT_PASSWORD:-minio123}; do
+          echo 'waiting for minio...'; sleep 2;
+        done
+        mc mb --ignore-existing local/${S3_BUCKET:-datalake}
+        echo "bucket ${S3_BUCKET:-datalake} ready"
+
+  # Core compute: a single idle container we exec into to run jobs in local[*] mode.
+  # Right-sized for the dataset (~16M rows / 250 MB). Scale story = docs/aws-reference-architecture.md.
+  spark:
+    build:
+      context: .
+      dockerfile: infra/spark/Dockerfile
+    image: ifood-case/spark:4.0.1
+    command: ["bash", "-c", "sleep infinity"]
+    environment:
+      SPARK_MASTER: "local[*]"
+      MINIO_ENDPOINT: http://minio:9000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio123}
+      AWS_REGION: us-east-1
+      S3_BUCKET: ${S3_BUCKET:-datalake}
+      TLC_BASE_URL: https://d37ci6vzurychx.cloudfront.net/trip-data
+    volumes: [".:/opt/app"]
+    working_dir: /opt/app
+    ports: ["4040:4040"]
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+
+  # --- optional: real Spark standalone cluster (proof of distributed execution) ---
+  spark-master:
+    profiles: ["cluster"]
+    build:
+      context: .
+      dockerfile: infra/spark/Dockerfile
+    image: ifood-case/spark:4.0.1
+    command: ["bash", "-c", "/opt/spark/bin/spark-class org.apache.spark.deploy.master.Master --host spark-master --port 7077 --webui-port 8081"]
+    environment:
+      SPARK_MASTER: spark://spark-master:7077
+      MINIO_ENDPOINT: http://minio:9000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio123}
+      AWS_REGION: us-east-1
+      S3_BUCKET: ${S3_BUCKET:-datalake}
+      TLC_BASE_URL: https://d37ci6vzurychx.cloudfront.net/trip-data
+    volumes: [".:/opt/app"]
+    working_dir: /opt/app
+    ports: ["8081:8081"]
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      # Master RPC binds to the `spark-master` host (container IP), not loopback; the web UI
+      # binds 0.0.0.0:8081, so check that instead.
+      test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/localhost/8081'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  spark-worker:
+    profiles: ["cluster"]
+    build:
+      context: .
+      dockerfile: infra/spark/Dockerfile
+    image: ifood-case/spark:4.0.1
+    command: ["bash", "-c", "/opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077 --webui-port 8082"]
+    environment:
+      SPARK_WORKER_CORES: "2"
+      SPARK_WORKER_MEMORY: "4g"
+    volumes: [".:/opt/app"]
+    working_dir: /opt/app
+    ports: ["8082:8082"]
+    depends_on:
+      spark-master:
+        condition: service_healthy
+
+  # --- optional: production-like SQL serving (Trino + Hive Metastore) ---
+  metastore-db:
+    image: postgres:15
+    profiles: ["consumption"]
+    environment:
+      POSTGRES_USER: hive
+      POSTGRES_PASSWORD: hive
+      POSTGRES_DB: metastore
+    volumes: ["hms-db:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hive"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  hive-metastore:
+    image: apache/hive:4.0.0
+    profiles: ["consumption"]
+    depends_on:
+      metastore-db:
+        condition: service_healthy
+      minio: { condition: service_started }
+    environment:
+      SERVICE_NAME: metastore
+      DB_DRIVER: postgres
+      SERVICE_OPTS: >-
+        -Djavax.jdo.option.ConnectionDriverName=org.postgresql.Driver
+        -Djavax.jdo.option.ConnectionURL=jdbc:postgresql://metastore-db:5432/metastore
+        -Djavax.jdo.option.ConnectionUserName=hive
+        -Djavax.jdo.option.ConnectionPassword=hive
+        -Dfs.s3a.endpoint=http://minio:9000
+        -Dfs.s3a.access.key=${MINIO_ROOT_USER:-minio}
+        -Dfs.s3a.secret.key=${MINIO_ROOT_PASSWORD:-minio123}
+        -Dfs.s3a.path.style.access=true
+        -Dfs.s3a.connection.ssl.enabled=false
+        -Dmetastore.warehouse.dir=s3a://${S3_BUCKET:-datalake}/warehouse
+    ports: ["9083:9083"]
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/localhost/9083'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  trino:
+    image: trinodb/trino:481
+    profiles: ["consumption"]
+    depends_on:
+      hive-metastore:
+        condition: service_healthy
+    ports: ["8080:8080"]
+    volumes: ["./infra/trino/catalog:/etc/trino/catalog:ro"]
+    healthcheck:
+      test: ["CMD", "trino", "--execute", "SELECT 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+
+  # --- optional: orchestration UI (runs Spark in-process, local[*]) ---
+  dagster:
+    build:
+      context: .
+      dockerfile: infra/dagster/Dockerfile
+    image: ifood-case/dagster:1.13.11
+    profiles: ["orchestration"]
+    command: ["bash", "-c", "dagster dev -h 0.0.0.0 -p 3000 -m orchestration.definitions"]
+    environment:
+      SPARK_MASTER: "local[*]"
+      MINIO_ENDPOINT: http://minio:9000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio123}
+      AWS_REGION: us-east-1
+      S3_BUCKET: ${S3_BUCKET:-datalake}
+      TLC_BASE_URL: https://d37ci6vzurychx.cloudfront.net/trip-data
+      INGEST_START: "2023-01"
+      INGEST_END: "2023-05"
+      DAGSTER_HOME: /opt/dagster/home
+    volumes: [".:/opt/app"]
+    working_dir: /opt/app
+    ports: ["3000:3000"]
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+
+  # --- optional: fully-containerized test runner (used by `make test-docker`) ---
+  test:
+    build:
+      context: .
+      dockerfile: infra/test/Dockerfile
+    image: ifood-case/test:4.0.1
+    profiles: ["test"]
+    environment:
+      DELTA_VIA_PACKAGES: "0"
+    volumes: [".:/opt/app"]
+    working_dir: /opt/app
+    command: ["bash", "-c", "pytest -m 'not integration' -q"]
+
+volumes:
+  minio-data:
+  hms-db:

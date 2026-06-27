@@ -1,0 +1,26 @@
+[tool.ruff]
+line-length = 100
+# Match the container runtime (apache/spark base ships Python 3.10). Keeping this at py311
+# would let ruff's UP017 rewrite `timezone.utc` back to `datetime.UTC`, which is 3.11-only
+# and breaks the Spark jobs at runtime.
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+markers = [
+    "spark: tests that need a local SparkSession (Java + sockets; run in CI)",
+    "integration: tests that require the Docker stack (MinIO/Trino) to be running",
+]
+testpaths = ["tests"]
+addopts = "-ra"

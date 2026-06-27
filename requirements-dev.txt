@@ -1,0 +1,15 @@
+-r requirements.txt
+
+# Local Spark runtime for unit tests — MUST match the image's pinned versions
+# (validated coherent matrix: Spark 4.0.1 / Delta 4.0.0 / Scala 2.13 / Java 17).
+pyspark==4.0.1
+delta-spark==4.0.0
+
+# Test & quality tooling
+pytest>=8,<9
+ruff>=0.6,<1
+black>=24,<25
+mypy>=1.10,<2
+
+# Analysis helpers (optional, for analysis/ scripts & notebooks); duckdb is in requirements.txt
+pandas>=2,<3

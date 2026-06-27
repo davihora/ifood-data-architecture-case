@@ -1,0 +1,3 @@
+# Dagster orchestration layer (installed on top of the Spark image; see infra/dagster/Dockerfile).
+dagster==1.13.11
+dagster-webserver==1.13.11
