@@ -50,6 +50,8 @@ on <http://localhost:4040> while a job runs.
 
 ![Local architecture: Makefile orchestrates a trigger → Python ingestion (Capture Raw Data) → Spark jobs (Clean → Transformation) with a Data-Quality gate over a MinIO/Delta medallion (landing → bronze → silver → gold), answered via DuckDB SQL; EDA over Silver.](docs/img/local-architecture.png)
 
+![alt text](image.png)
+
 ```
 TLC CDN ──(downloader: date range, idempotent, manifest)──▶ MinIO  s3a://datalake/
   landing/ (raw parquet, immutable)
@@ -201,4 +203,7 @@ Athena + MWAA) by **config only** — see [`docs/aws-reference-architecture.md`]
   (`check-mem`); and if a job is still OOM-killed under host memory pressure, the run prints a
   clear *"out-of-memory — environment limit, not a pipeline bug"* message (exit 137) with the
   fix, instead of a cryptic error.
+- **First-run build:** BuildKit can occasionally fail the first image build with a transient
+  snapshot error (`parent snapshot ... does not exist`) — a Docker quirk, not a project bug.
+  `make` retries the build once automatically; re-running `make demo` also clears it.
 - Demo credentials (`minio`/`minio123`) are for local use only.

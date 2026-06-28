@@ -52,7 +52,12 @@ check-mem: ## fail fast if the Docker engine exposes < MIN_MEM_GB of RAM (avoids
 	echo "✓ Docker engine RAM: $${gb} GB (need ≥ $(MIN_MEM_GB))"
 
 up: check-docker check-mem ## build + start the core stack (minio + spark), wait for health
-	$(DC) up -d --build --wait
+	@$(DC) up -d --build --wait || { \
+	  echo ""; \
+	  echo "⚠️  Build/up failed — often a transient BuildKit snapshot glitch on the first run"; \
+	  echo "    (\"parent snapshot ... does not exist\"). Retrying once..."; \
+	  echo ""; \
+	  $(DC) up -d --build --wait; }
 
 down: ## stop the stack
 	$(DC) --profile cluster --profile test down
