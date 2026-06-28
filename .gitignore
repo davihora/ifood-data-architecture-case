@@ -30,3 +30,8 @@ metastore_db/
 # Editor / local tooling
 .vscode/
 .claude/
+
+# Local-only docs (architecture narrative justified in the presentation, not committed)
+docs/adr/
+docs/architecture.md
+docs/CASE_COVERAGE.md

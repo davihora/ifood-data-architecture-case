@@ -4,13 +4,11 @@
 #
 # Core (always on): minio, minio-init, spark (single-node local[*] runner).
 # Optional profiles (opt-in, keep the default light):
-#   cluster       → spark-master + spark-worker (real Spark standalone; proof of scale)
-#   consumption   → metastore-db + hive-metastore + trino (production-like SQL serving)
-#   orchestration → dagster (asset graph + lineage)
-#   test          → containerized pytest runner
+#   cluster → spark-master + spark-worker (real Spark standalone; proof of scale)
+#   test    → containerized pytest runner
 #
-# Default answer path = Spark (pipeline) writes Gold Delta; DuckDB reads it via SQL — no
-# cluster/Trino/Hive needed, so the core demo is light (~4 GB) and resilient.
+# Answer path = Spark (pipeline) writes Gold Delta; DuckDB reads it via SQL — so the
+# core demo is light (~4 GB) and resilient.
 name: ifood-case
 
 services:
@@ -109,91 +107,6 @@ services:
       spark-master:
         condition: service_healthy
 
-  # --- optional: production-like SQL serving (Trino + Hive Metastore) ---
-  metastore-db:
-    image: postgres:15
-    profiles: ["consumption"]
-    environment:
-      POSTGRES_USER: hive
-      POSTGRES_PASSWORD: hive
-      POSTGRES_DB: metastore
-    volumes: ["hms-db:/var/lib/postgresql/data"]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hive"]
-      interval: 5s
-      timeout: 5s
-      retries: 30
-
-  hive-metastore:
-    image: apache/hive:4.0.0
-    profiles: ["consumption"]
-    depends_on:
-      metastore-db:
-        condition: service_healthy
-      minio: { condition: service_started }
-    environment:
-      SERVICE_NAME: metastore
-      DB_DRIVER: postgres
-      SERVICE_OPTS: >-
-        -Djavax.jdo.option.ConnectionDriverName=org.postgresql.Driver
-        -Djavax.jdo.option.ConnectionURL=jdbc:postgresql://metastore-db:5432/metastore
-        -Djavax.jdo.option.ConnectionUserName=hive
-        -Djavax.jdo.option.ConnectionPassword=hive
-        -Dfs.s3a.endpoint=http://minio:9000
-        -Dfs.s3a.access.key=${MINIO_ROOT_USER:-minio}
-        -Dfs.s3a.secret.key=${MINIO_ROOT_PASSWORD:-minio123}
-        -Dfs.s3a.path.style.access=true
-        -Dfs.s3a.connection.ssl.enabled=false
-        -Dmetastore.warehouse.dir=s3a://${S3_BUCKET:-datalake}/warehouse
-    ports: ["9083:9083"]
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/localhost/9083'"]
-      interval: 10s
-      timeout: 5s
-      retries: 30
-      start_period: 60s
-
-  trino:
-    image: trinodb/trino:481
-    profiles: ["consumption"]
-    depends_on:
-      hive-metastore:
-        condition: service_healthy
-    ports: ["8080:8080"]
-    volumes: ["./infra/trino/catalog:/etc/trino/catalog:ro"]
-    healthcheck:
-      test: ["CMD", "trino", "--execute", "SELECT 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 30
-      start_period: 30s
-
-  # --- optional: orchestration UI (runs Spark in-process, local[*]) ---
-  dagster:
-    build:
-      context: .
-      dockerfile: infra/dagster/Dockerfile
-    image: ifood-case/dagster:1.13.11
-    profiles: ["orchestration"]
-    command: ["bash", "-c", "dagster dev -h 0.0.0.0 -p 3000 -m orchestration.definitions"]
-    environment:
-      SPARK_MASTER: "local[*]"
-      MINIO_ENDPOINT: http://minio:9000
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio123}
-      AWS_REGION: us-east-1
-      S3_BUCKET: ${S3_BUCKET:-datalake}
-      TLC_BASE_URL: https://d37ci6vzurychx.cloudfront.net/trip-data
-      INGEST_START: "2023-01"
-      INGEST_END: "2023-05"
-      DAGSTER_HOME: /opt/dagster/home
-    volumes: [".:/opt/app"]
-    working_dir: /opt/app
-    ports: ["3000:3000"]
-    depends_on:
-      minio-init:
-        condition: service_completed_successfully
-
   # --- optional: fully-containerized test runner (used by `make test-docker`) ---
   test:
     build:
@@ -209,4 +122,3 @@ services:
 
 volumes:
   minio-data:
-  hms-db:

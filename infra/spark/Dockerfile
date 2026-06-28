@@ -30,9 +30,9 @@ COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Make pyspark + py4j importable from a PLAIN python process. The base image exposes them
-# only to the spark-submit/pyspark launchers, NOT on PYTHONPATH — but `make analyze`, the
-# Dagster assets and the containerized pytest import pyspark without spark-submit. A .pth in
-# site-packages adds both (py4j zip version resolved by glob, no hardcoding).
+# only to the spark-submit/pyspark launchers, NOT on PYTHONPATH — but `make analyze` and the
+# containerized pytest import pyspark without spark-submit. A .pth in site-packages adds both
+# (py4j zip version resolved by glob, no hardcoding).
 RUN SITE="$(python3 -c 'import site; print(site.getsitepackages()[0])')" \
     && printf '%s\n' "${SPARK_HOME}/python" > "${SITE}/pyspark.pth" \
     && ls "${SPARK_HOME}"/python/lib/py4j-*-src.zip >> "${SITE}/pyspark.pth"
@@ -48,7 +48,7 @@ RUN mkdir -p /opt/duckdb-ext \
 # Default Spark configs (s3a -> MinIO + Delta extensions).
 COPY infra/spark/spark-defaults.conf ${SPARK_HOME}/conf/spark-defaults.conf
 
-# /opt/app on PYTHONPATH so the src/analysis/orchestration packages import.
+# /opt/app on PYTHONPATH so the src/ and analysis/ packages import.
 ENV PYTHONPATH=/opt/app:${PYTHONPATH}
 # `docker compose exec` bypasses the login shell, so it does NOT inherit the base image's
 # entrypoint PATH — only the Docker ENV PATH (java + system dirs). Add Spark's bin so

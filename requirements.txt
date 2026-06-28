@@ -5,6 +5,5 @@
 # they are pinned in requirements-dev.txt.
 boto3>=1.34,<2
 requests>=2.32,<3
-trino>=0.330
-# DuckDB = the default lightweight SQL consumption engine (reads Gold Delta from MinIO).
+# DuckDB = the SQL consumption engine (reads Gold Delta from MinIO).
 duckdb>=1.0

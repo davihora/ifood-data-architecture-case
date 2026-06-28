@@ -1,9 +1,9 @@
 # AWS reference architecture (production target)
 
-This project runs **locally** for reproducibility, cost and testability (see
-[ADR 0009](adr/0009-local-first-aws-target.md)). This document shows how the **same code**
-maps to a serverless AWS lakehouse — the scale/production story behind the local single-node
-default. It is a **reference design (not deployed)**; the local stack is the runnable artifact.
+This project runs **locally** for reproducibility, cost and testability. This document shows how
+the **same code** maps to a serverless AWS lakehouse — the scale/production story behind the
+local single-node default. It is a **reference design (not deployed)**; the local stack is the
+runnable artifact.
 
 ## Local → AWS mapping (1:1)
 
@@ -13,9 +13,9 @@ default. It is a **reference design (not deployed)**; the local stack is the run
 | Ingestion | `src/ingestion/downloader.py` | **AWS Lambda** triggered by **EventBridge** (monthly schedule) → S3 landing |
 | Compute (PySpark) | Spark `local[*]` (1 container) | **Amazon EMR Serverless** (Spark) — same PySpark jobs via a Spark-submit job driver |
 | Table format | Delta Lake on MinIO | **Delta Lake on S3** |
-| Metadata / catalog | Hive Metastore (or Delta log) | **AWS Glue Data Catalog** |
-| SQL consumption | DuckDB / Spark SQL (Trino optional) | **Amazon Athena** (serverless SQL over Delta via Glue Catalog) |
-| Orchestration | Makefile / Dagster | **Amazon MWAA** (Managed Airflow) |
+| Metadata / catalog | Delta transaction log | **AWS Glue Data Catalog** |
+| SQL consumption | DuckDB (Spark SQL also available) | **Amazon Athena** (serverless SQL over Delta via Glue Catalog) |
+| Orchestration | Makefile (sequential targets) | **Amazon MWAA** (Managed Airflow) |
 | Data quality | `dq.check_results` Delta + logs | same `dq.check_results` table + **CloudWatch** metrics/alarms |
 | Provisioning | docker-compose | **Terraform / CDK** (skeleton TBD) |
 | Credentials | static keys (MinIO) | **IAM roles** (no secrets in code) |
@@ -51,7 +51,7 @@ Because everything is centralized in `src/config.py` / `src/common/spark.py`, th
 | `fs.s3a.path.style.access` | `true` (MinIO) | `false` (S3 virtual-hosted) |
 | `fs.s3a.aws.credentials.provider` | `SimpleAWSCredentialsProvider` (static keys) | default chain → **IAM role** (no keys) |
 | `SPARK_MASTER` | `local[*]` | managed by EMR Serverless |
-| Catalog | Delta log / Hive Metastore | `spark.sql.catalogImplementation=hive` + **Glue Catalog** |
+| Catalog | Delta transaction log | `spark.sql.catalogImplementation=hive` + **Glue Catalog** |
 
 The PySpark transforms (`bronze.py`, `silver.py`, `gold.py`), the Delta tables, the DQ engine
 and the Q1/Q2 logic are **unchanged**.

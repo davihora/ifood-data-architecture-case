@@ -28,8 +28,8 @@ jobs:
 
       - name: Lint (ruff + black + mypy)
         run: |
-          ruff check src tests analysis orchestration
-          black --check src tests analysis orchestration
+          ruff check src tests analysis
+          black --check src tests analysis
           mypy src
 
       - name: Tests (pure-Python + DuckDB oracle + PySpark/Delta)

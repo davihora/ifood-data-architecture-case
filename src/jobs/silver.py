@@ -1,6 +1,6 @@
 """Silver job: clean & conform Bronze into analytics-ready trips + a quarantine table.
 
-Cleaning policy (see docs/adr/0006): keep rows with non-null keys, pickup inside the
+Cleaning policy: keep rows with non-null keys, pickup inside the
 ingestion window, total_amount > 0, and dropoff >= pickup. Exact duplicates are removed.
 passenger_count quality is recorded as a WARN metric only — the passengers>0 filter is
 applied per-question in Gold, so Q1 (revenue) is not distorted by dropping those trips.

@@ -7,8 +7,7 @@ cross-checked with the project's DuckDB oracle using the **identical cleaning po
 **Data volume:** 16,186,386 raw rows (Jan–May) → **16,041,339** after the Silver gate
 (in-window pickup, `total_amount > 0`, `dropoff >= pickup`, exact-duplicate removal) =
 **0.9% dropped**. The gate is deliberately conservative; `passenger_count > 0` is applied
-only where it is the metric (Q2), so Q1 (revenue) is not distorted — see
-[ADR 0006](adr/0006-data-quality-and-modeling.md).
+only where it is the metric (Q2), so Q1 (revenue) is not distorted.
 
 ## Q1 — average `total_amount` per month (all yellow taxis)
 
@@ -43,8 +42,7 @@ mostly solo riders), rising again through the evening. Classic NYC ride-occupanc
 > **Scope note:** Q2 says "todos os táxis da frota". We scope to **yellow** because the
 > case's required columns (`tpep_*`) are yellow-specific (green taxis use `lpep_*`; FHV has no
 > `passenger_count`). The pipeline parameterizes the dataset, so extending to green (which also
-> has `passenger_count`) is a config change — documented in
-> [ADR 0006](adr/0006-data-quality-and-modeling.md).
+> has `passenger_count`) is a config change.
 
 *Numbers above were computed from the official TLC files for Jan–May 2023; reproduce with
 `make all`.*
