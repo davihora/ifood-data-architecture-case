@@ -48,6 +48,8 @@ on <http://localhost:4040> while a job runs.
 
 ## Architecture
 
+![Local architecture: Makefile orchestrates a trigger → Python ingestion (Capture Raw Data) → Spark jobs (Clean → Transformation) with a Data-Quality gate over a MinIO/Delta medallion (landing → bronze → silver → gold), answered via DuckDB SQL; EDA over Silver.](docs/img/local-architecture.png)
+
 ```
 TLC CDN ──(downloader: date range, idempotent, manifest)──▶ MinIO  s3a://datalake/
   landing/ (raw parquet, immutable)
