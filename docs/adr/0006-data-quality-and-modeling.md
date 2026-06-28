@@ -5,8 +5,10 @@
 ## Context
 TLC monthly files are dirty: timestamps outside the file's month (back to 2008/2009 and into
 the next month), negative/zero `total_amount` (refunds), `passenger_count` null/0, exact
-duplicates, and schema drift (INT64↔DOUBLE for `passenger_count`/`VendorID`). Cleaning can
-drop ~24% of rows, so cleaned averages differ materially from raw.
+duplicates, and schema drift (INT64↔DOUBLE for `passenger_count`/`VendorID`). On the Jan–May
+2023 load (16,186,383 rows) the gate quarantines **~0.9%** (145,044 rows: 144,146 non-positive
+amount, 795 dropoff<pickup, 104 out-of-window) and **flags-but-keeps ~4.3%** (702,146 rows
+with `passenger_count` 0/NULL). Numbers reproduced by `make eda`.
 
 ## Decision
 - **Landing**: original parquet, immutable (raw fidelity preserved).

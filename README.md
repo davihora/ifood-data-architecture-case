@@ -80,11 +80,48 @@ alternative, and the Q2 **"all taxis" → yellow** scoping are in
 [ADR 0006](docs/adr/0006-data-quality-and-modeling.md). Full point-by-point case mapping:
 [`docs/CASE_COVERAGE.md`](docs/CASE_COVERAGE.md).
 
+## Exploratory analysis → cleaning decisions
+
+`make eda` profiles the Silver layer and the quarantine — the loop behind every cleaning
+rule is **explore → find → decide**, not "I cleaned the data". All numbers below are the
+actual `make eda` output on the Jan–May 2023 load (16,186,383 raw Bronze rows).
+
+**What the data looks like (profiling):**
+- **Volume/month** (clean Silver): 3.04M · 2.89M · 3.37M · 3.26M · 3.48M = **16,041,339** trips.
+- **`total_amount`**: min **0.01**, median **20.70**, mean **28.31**, max **6,304.90** — right-skewed;
+  outliers are **kept** (we only drop non-positive amounts, see below).
+- **`passenger_count`**: **73.5%** carry 1 passenger; **701,006 (4.4%)** are 0/NULL.
+
+**Findings → rules (the loop):**
+
+| EDA probe | What it found (real) | Rule → severity |
+|---|---|---|
+| pickup timestamp range | **104** pickups outside Jan–May 2023 (stray 2008/09, month-bleed) | `pickup_in_window` → QUARANTINE |
+| `total_amount` distribution | **144,146** trips ≤ \$0 (refunds/voids/zero-fare) | `amount_positive` → QUARANTINE |
+| pickup vs dropoff order | **795** trips with dropoff < pickup (impossible) | `dropoff_after_pickup` → QUARANTINE |
+| required keys | **0** nulls in VendorID/pickup/dropoff/amount | `*_not_null` → QUARANTINE (guards) |
+| `passenger_count` distribution | **702,146** trips with 0/NULL passengers (4.3%) | `passenger_positive` → **WARN** |
+
+**How failing rows are treated** (`src/common/dq.py`):
+- **QUARANTINE** → row is routed to `silver_yellow_trips_rejected` with a `_reject_reason`
+  (audited, *not* silently dropped) and excluded from Gold.
+- **WARN** → row is **kept**; only recorded as a metric. `passenger_count` is WARN because
+  0-passenger trips are real revenue (valid for Q1) and only wrong for Q2 — so we keep them
+  and filter `passenger_count > 0` **in the Q2 query**, not globally.
+- **BLOCK** → would halt the pipeline (none configured today).
+- Every check is persisted per run to `dq.check_results` (Delta, keyed by `run_id`).
+
+**The numbers reconcile (auditable):** quarantine total = 144,146 + 795 + 104 − **1** overlap
+= **145,044**; Silver = 16,186,383 − 145,044 = **16,041,339**, which equals the per-month sum
+above. ~0.9% quarantined, 4.3% flagged-but-kept — far from a blind filter.
+
+Reproduce: `make eda`. Full rationale: [ADR 0006](docs/adr/0006-data-quality-and-modeling.md).
+
 ## Validated version matrix (see [ADR 0007](docs/adr/0007-pinned-version-matrix.md))
 
 Spark **4.0.1** (Scala 2.13, Java 17) · Delta **4.0.0** · hadoop-aws **3.4.1** + AWS SDK v2
 **2.24.6** · MinIO · Trino **481** (native S3) · Hive Metastore 4.0.0 · Dagster 1.13.11 ·
-Python 3.11. Spark is pinned to **4.0.x, not 4.1**, because only 4.0.x has a verified
+Python 3.10 (Spark base image). Spark is pinned to **4.0.x, not 4.1**, because only 4.0.x has a verified
 `hadoop-aws` match — the #1 s3a stack-breaker. Jars **and DuckDB extensions** are **baked into
 the image** (offline-safe).
 
@@ -120,7 +157,7 @@ baked Delta jars — no network) inside a container; the host needs only Docker.
 is the same suite using a local Python+Java toolchain.
 
 CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs ruff + black + mypy and the
-full suite (incl. PySpark) on Python 3.11 + Java 17.
+full suite (incl. PySpark) on Python 3.10 + Java 17 — matching the Spark container runtime.
 
 ## Optional: production-like SQL via Trino
 
@@ -147,6 +184,8 @@ make cluster-run   # run the full pipeline on the cluster
 The same code maps to a **serverless AWS lakehouse** (S3 + EMR Serverless + Glue Data Catalog +
 Athena + MWAA) by **config only** — see [`docs/aws-reference-architecture.md`](docs/aws-reference-architecture.md)
 and [ADR 0009](docs/adr/0009-local-first-aws-target.md).
+
+![AWS reference architecture: Airflow/MWAA orchestrates an EventBridge/cron trigger → Lambda ingestion (period as a parameter) → EMR Serverless Spark jobs over an S3 medallion (landing → bronze → silver → gold) → Glue Data Catalog → Athena, with a data-quality gate that alerts (Teams/Slack) on failure; Terraform provisions everything.](docs/img/aws-architecture.png)
 
 ## Make targets
 

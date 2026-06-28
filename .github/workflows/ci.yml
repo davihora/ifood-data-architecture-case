@@ -16,10 +16,10 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Python 3.11
+      - name: Set up Python 3.10 (matches the Spark container runtime)
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.10"
 
       - name: Install dependencies
         run: |
@@ -34,3 +34,16 @@ jobs:
 
       - name: Tests (pure-Python + DuckDB oracle + PySpark/Delta)
         run: pytest -m "not integration"
+
+  # Smoke test: build the REAL Spark image and run the full suite INSIDE it. Catches the class
+  # of bug the lint/unit job can't — `python3`/`spark-submit` on PATH, baked Delta jars, runtime
+  # Python version — i.e. "does the artifact the evaluator runs actually work?". Heavier than the
+  # `test` job, so it is skipped on day-to-day feature-branch pushes (runs on PRs + pushes to main).
+  smoke-docker:
+    name: Smoke test (full suite in the Spark container)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the Spark image and run the full suite inside it
+        run: make test-docker

@@ -14,6 +14,8 @@ venv/
 # Data / Spark local artifacts
 data/
 *.parquet
+# but DO keep the tiny deterministic test fixture (tests fail in CI without it)
+!tests/fixtures/*.parquet
 spark-warehouse/
 derby.log
 metastore_db/
