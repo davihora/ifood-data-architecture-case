@@ -2,8 +2,8 @@
 path (`make analyze`).
 
 DuckDB reads the Spark-written Delta tables directly from MinIO (S3-compatible), so serving
-the answers via SQL needs no Spark or Trino. The exact same query runs on AWS by pointing
-DuckDB/Athena at S3 — see docs/aws-reference-architecture.md.
+the answers via SQL needs no Spark and no separate query server. The exact same query runs on
+AWS by pointing DuckDB/Athena at S3 — see docs/aws-reference-architecture.md.
 """
 
 from __future__ import annotations
